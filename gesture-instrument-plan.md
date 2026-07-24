@@ -141,13 +141,18 @@ FluidSynth is a **native** library — `pip install pyfluidsynth` only gives you
 
 Grab any GM SoundFont (`FluidR3_GM.sf2`, ~140 MB) — it has all three instruments you need.
 
-**Decisions to lock:**
-- [ ] Mapping mode: A / B / C
-- [ ] Trigger: pinch / pluck
-- [ ] Audio backend: FluidSynth (recommended) / sounddevice sample mixer
-- [ ] Scale: C major pentatonic is the safe default — with pentatonic, *wrong notes still sound fine*, which massively improves the demo. Do not use a chromatic mapping.
+**Decisions locked (2026-07-24):**
+- [x] Mapping mode: **C — continuous pitch** (right-hand height → pitch; pinch = note-on). Sidesteps finger-count classification for pitch. Mode B deferred as a stretch.
+- [x] Trigger: **pinch** (unambiguous in a single frame → lowest latency). Pluck deferred to Phase 8.
+- [x] Audio backend: **FluidSynth** (installed & verified; `dsound` driver on Windows).
+- [x] Scale: **C major pentatonic** (`[0, 2, 4, 7, 9]`, root C4 = 60) — with pentatonic, *wrong notes still sound fine*.
 
 **Exit criteria:** `python -c "import mediapipe, fluidsynth, cv2, sounddevice"` succeeds and a test `noteon` makes a sound.
+
+> **Phase 0 status: DONE.** Env, assets, and audio verified via `tools/check_env.py` →
+> `PHASE 0 ENVIRONMENT: OK`. On Windows, FluidSynth is a vendored native lib (no
+> winget/choco package), wired up by `src/fsbootstrap.py`; audio driver is `dsound`.
+> Config for the locked decisions: `config/mappings.yaml`. See `README.md` for setup.
 
 ---
 

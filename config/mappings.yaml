@@ -1,0 +1,46 @@
+# Gesture Instrument - mapping config
+# Decisions locked in Phase 0 (2026-07-24). All musical decisions live here, not in
+# code; this file is hot-reloaded at runtime (Phase 5). Schema firms up in Phase 5.
+
+mode: C                     # C = continuous pitch: right-hand HEIGHT -> scale degree
+
+scale: [0, 2, 4, 7, 9]      # C major pentatonic (semitone offsets) - wrong notes still sound fine
+root: 60                    # C4
+
+# Mode C: quantize right-hand vertical position to a pitch.
+# hand_y is the palm centroid, normalized 0.0 (top of frame) .. 1.0 (bottom).
+continuous:
+  octaves: 3                # vertical travel spans this many octaves of the scale
+  deadband: 0.06            # hysteresis at each degree boundary so a hovering hand doesn't warble
+  invert: true              # hand high on screen (small y) -> higher pitch
+
+# Left-hand pose (finger count) selects instrument + base octave offset.
+# Thumb is never load-bearing here (see plan 2.2): counts use fingers, 5 = all open.
+left_hand:
+  0: {instrument: piano,  octave: 0}
+  1: {instrument: piano,  octave: 0}
+  2: {instrument: guitar, octave: 0}
+  3: {instrument: harp,   octave: 0}
+  4: {instrument: harp,   octave: 1}
+  5: {instrument: piano,  octave: 1}
+
+trigger: pinch              # pinch | pluck   (pluck deferred to Phase 8)
+trigger_hand: right         # the hand whose height sets pitch also pinches to fire
+
+instruments:                # General MIDI program numbers (FluidR3_GM.sf2)
+  piano: 0
+  guitar: 24                # nylon guitar (25 = steel)
+  harp: 46
+
+sustain:                    # per-instrument note-off behaviour (plan 4.1)
+  piano: true               # send note-off on pinch-release (damper matters)
+  guitar: false             # let the sample ring; note-off cuts it dead
+  harp: false               # let it ring
+
+audio:
+  backend: fluidsynth       # fluidsynth | sounddevice
+  soundfont: assets/FluidR3_GM.sf2
+  driver: dsound            # Windows: dsound (verified) | wasapi | waveout
+  samplerate: 48000
+  period_size: 128          # fallback 128 -> 256 -> default if it fails (plan 4.1)
+  periods: 2

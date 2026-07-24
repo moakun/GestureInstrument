@@ -1,0 +1,26 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+
+# Large binary assets (fetch via tools/, not committed) — see README
+assets/*.sf2
+assets/*.task
+
+# Vendored native libraries (Windows FluidSynth) — see README
+vendor/
+
+# Recorded landmark sessions / captures
+*.npz
+*.wav
+
+# Per-user calibration
+calib.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

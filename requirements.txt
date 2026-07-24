@@ -1,0 +1,7 @@
+# Gesture Instrument — Python dependencies (Phase 0)
+mediapipe>=0.10.14
+opencv-python
+numpy
+sounddevice
+pyfluidsynth
+pyyaml
