@@ -23,7 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from fsbootstrap import ensure_fluidsynth_on_path  # noqa: E402
+#from fsbootstrap import ensure_fluidsynth_on_path  # noqa: E402
 
 GM = {"piano": 0, "guitar": 24, "harp": 46}   # General MIDI program numbers
 PENTATONIC = [0, 2, 4, 7, 9]                   # C major pentatonic (semitone offsets)
@@ -38,16 +38,16 @@ def check_imports() -> object:
     import sounddevice
     import yaml
 
-    ensure_fluidsynth_on_path()
-    import fluidsynth
+    #ensure_fluidsynth_on_path()
+    #import fluidsynth
 
     print(f"      numpy       {numpy.__version__}")
     print(f"      opencv      {cv2.__version__}")
     print(f"      mediapipe   {mediapipe.__version__}")
     print(f"      sounddevice {sounddevice.__version__}")
     print(f"      pyyaml       {yaml.__version__}")
-    print(f"      pyfluidsynth {fluidsynth.api_version}")
-    return fluidsynth
+    #print(f"      pyfluidsynth {fluidsynth.api_version}")
+    #return fluidsynth
 
 
 def check_assets() -> Path:
