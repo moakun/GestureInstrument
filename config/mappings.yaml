@@ -29,7 +29,7 @@ trigger_hand: right         # the hand whose height sets pitch also pinches to f
 
 instruments:                # General MIDI program numbers (FluidR3_GM.sf2)
   piano: 0
-  guitar: 24                # nylon guitar (25 = steel)
+  guitar: 24                # nylon guitar (25 = steel string guitar)
   harp: 46
 
 sustain:                    # per-instrument note-off behaviour (plan 4.1)
