@@ -61,6 +61,43 @@ def draw_stats(img: np.ndarray, lines: list[str]) -> None:
                     _FONT, 0.45, _WHITE if i == 0 else _DIM, 1, cv2.LINE_AA)
 
 
+def draw_hand_features(img: np.ndarray, lm: np.ndarray, f, label: str) -> None:
+    """Per-hand feature readout anchored to the wrist: count, pinch bar, motion gate.
+
+    The pinch bar draws both Schmitt thresholds as ticks — Phase 3 tunes them by watching
+    this, which is far faster than reading printed numbers (plan 6).
+    """
+    h, w = img.shape[:2]
+    color = HAND_COLORS.get(label, _WHITE)
+    x = int(np.clip(lm[0, 0] * w, 60, w - 150))
+    y = int(np.clip(lm[0, 1] * h, 90, h - 90))
+
+    cv2.putText(img, str(f.count), (x - 52, y + 30), _FONT, 1.1, color, 3, cv2.LINE_AA)
+
+    # Pinch bar: 0 (touching) .. 1.0 (wide open), with close/open thresholds marked.
+    bar_w, bar_x, bar_y = 96, x + 14, y + 44
+    cv2.rectangle(img, (bar_x, bar_y), (bar_x + bar_w, bar_y + 8), (60, 60, 60), -1)
+    filled = int(np.clip(f.pinch, 0.0, 1.0) * bar_w)
+    pinched = f.pinch < 0.25
+    cv2.rectangle(img, (bar_x, bar_y), (bar_x + filled, bar_y + 8),
+                  (80, 220, 80) if pinched else color, -1)
+    for thr in (0.25, 0.35):
+        tx = bar_x + int(thr * bar_w)
+        cv2.line(img, (tx, bar_y - 3), (tx, bar_y + 11), (240, 240, 240), 1)
+    if pinched:
+        cv2.putText(img, "PINCH", (bar_x + bar_w + 6, bar_y + 9),
+                    _FONT, 0.42, (80, 220, 80), 1, cv2.LINE_AA)
+
+    # Motion gate: red once the pose is in transit and classification is meaningless.
+    mot_y = bar_y + 14
+    cv2.rectangle(img, (bar_x, mot_y), (bar_x + bar_w, mot_y + 6), (60, 60, 60), -1)
+    mot = int(np.clip(f.motion / 4.0, 0.0, 1.0) * bar_w)
+    cv2.rectangle(img, (bar_x, mot_y), (bar_x + mot, mot_y + 6),
+                  (60, 60, 240) if f.motion > 1.2 else (140, 140, 140), -1)
+    gate = bar_x + int(1.2 / 4.0 * bar_w)
+    cv2.line(img, (gate, mot_y - 3), (gate, mot_y + 9), (240, 240, 240), 1)
+
+
 def draw_hint(img: np.ndarray, text: str) -> None:
     """Bottom-left hint line."""
     h = img.shape[0]

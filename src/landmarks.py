@@ -36,9 +36,20 @@ def true_handedness(label: str) -> str:
 
 @dataclass
 class HandsResult:
-    """One inference result, already converted to plain numpy for Phase 2."""
+    """One inference result, already converted to plain numpy for Phase 2.
+
+    Two coordinate spaces, and the difference matters:
+
+    * ``hands`` — **normalized image** coords, x/y in 0..1. Anisotropic: x spans the
+      frame width and y the height, so on a 4:3 camera a unit of x is 1.33x a unit of y.
+      Use for *screen position* (Mode C hand height), never raw for angles.
+    * ``world`` — **metric** coords in meters, origin at the hand's geometric center.
+      Isotropic and camera-independent, so this is the right input for shape features
+      (curl angles, pinch distance).
+    """
 
     hands: dict[str, np.ndarray] = field(default_factory=dict)  # "Left"/"Right" -> (21,3) f32
+    world: dict[str, np.ndarray] = field(default_factory=dict)  # metric, for shape features
     scores: dict[str, float] = field(default_factory=dict)
     ts_ms: int = 0
     capture_ts: float = 0.0     # perf_counter when the frame was grabbed
@@ -87,8 +98,10 @@ class Landmarker:
     def _on_result(self, result, image, timestamp_ms: int) -> None:
         done = time.perf_counter()
         hands: dict[str, np.ndarray] = {}
+        world: dict[str, np.ndarray] = {}
         scores: dict[str, float] = {}
-        for lms, handed in zip(result.hand_landmarks, result.handedness):
+        worlds = result.hand_world_landmarks or []
+        for i, (lms, handed) in enumerate(zip(result.hand_landmarks, result.handedness)):
             cat = handed[0]
             label = true_handedness(cat.category_name)
             arr = np.array([(p.x, p.y, p.z) for p in lms], dtype=np.float32)
@@ -96,6 +109,9 @@ class Landmarker:
             # more confident one. A positional tiebreak comes in Phase 7.
             if label not in hands or cat.score > scores[label]:
                 hands[label], scores[label] = arr, float(cat.score)
+                if i < len(worlds):
+                    world[label] = np.array([(p.x, p.y, p.z) for p in worlds[i]],
+                                            dtype=np.float32)
 
         with self._lock:
             capture_ts, submit_ts, seq = self._pending.pop(timestamp_ms, (0.0, 0.0, 0))
@@ -103,7 +119,7 @@ class Landmarker:
             if self._latest is not None and timestamp_ms < self._latest.ts_ms:
                 self.dropped += 1
                 return
-            self._latest = HandsResult(hands, scores, timestamp_ms,
+            self._latest = HandsResult(hands, world, scores, timestamp_ms,
                                        capture_ts, submit_ts, done, seq)
             # Guard against unbounded growth if any submit never gets a callback.
             if len(self._pending) > 60:

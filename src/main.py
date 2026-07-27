@@ -16,9 +16,11 @@ import time
 from pathlib import Path
 
 import cv2
+import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import features as feat
 import hud
 from capture import Camera
 from landmarks import Landmarker
@@ -72,6 +74,10 @@ def main() -> int:
         del first
 
         base = None          # pristine mirrored frame; never drawn on
+        aspect = cam.actual_size[0] / float(cam.actual_size[1])
+        hand_feats: dict[str, feat.HandFeatures] = {}
+        prev_shape: dict[str, np.ndarray] = {}
+        prev_t: dict[str, float] = {}
         while True:
             frame = cam.read()
             res = lmk.latest()
@@ -105,6 +111,22 @@ def main() -> int:
                     first_result_t = res.done_ts
                 if len(res.hands) >= 2:
                     both_hands_frames += 1
+
+                # --- Phase 2 features -------------------------------------------
+                # Shape features use metric world landmarks; screen position uses the
+                # normalized ones. Falls back to aspect-correcting the normalized array
+                # if world landmarks are ever unavailable.
+                hand_feats.clear()
+                for label, lm in res.hands.items():
+                    shape = res.world.get(label)
+                    if shape is None:
+                        shape = feat.isotropic(lm, aspect)
+                    dt = res.capture_ts - prev_t.get(label, 0.0) if label in prev_t else 0.0
+                    hand_feats[label] = feat.extract(shape, lm, prev_shape.get(label), dt)
+                    prev_shape[label], prev_t[label] = shape, res.capture_ts
+                for gone in set(prev_shape) - set(res.hands):
+                    prev_shape.pop(gone, None)      # don't measure motion across a dropout
+                    prev_t.pop(gone, None)
             if res is not None:
                 for label, lm in res.hands.items():
                     hud.draw_hand(view, lm, label, res.scores.get(label, 0.0))
@@ -115,15 +137,23 @@ def main() -> int:
             s2c50, s2c95 = metrics.submit_to_callback.percentiles()
             tot50, tot95 = metrics.total.percentiles()
             hands_txt = ", ".join(sorted(res.hands)) if res and res.hands else "none"
-            hud.draw_stats(view, [
+            lines = [
                 f"cap {metrics.capture_fps.fps:4.1f}  infer {metrics.infer_fps.fps:4.1f}"
                 f"  draw {metrics.render_fps.fps:4.1f} fps",
                 f"cap->sub  p50 {c2s50:5.1f}  p95 {c2s95:5.1f} ms",
                 f"sub->cb   p50 {s2c50:5.1f}  p95 {s2c95:5.1f} ms",
                 f"TOTAL     p50 {tot50:5.1f}  p95 {tot95:5.1f} ms",
                 f"hands: {hands_txt}  ({lmk.delegate})",
-            ])
-            hud.draw_hint(view, "Phase 1 vision spine - no audio yet")
+            ]
+            for label in sorted(hand_feats):
+                f = hand_feats[label]
+                moving = "MOVING" if f.motion > 1.2 else "still "
+                lines.append(f"{label[0]}: n={f.count} pinch={f.pinch:.2f} "
+                             f"y={f.y:.2f} mot={f.motion:4.1f} {moving}")
+            hud.draw_stats(view, lines)
+            for label in sorted(hand_feats):
+                hud.draw_hand_features(view, res.hands[label], hand_feats[label], label)
+            hud.draw_hint(view, "Phase 2 features - no audio yet")
 
             # Record a stage breakdown once per *new* result. Recording every iteration
             # would measure how old the latest result is, not how long rendering took.
