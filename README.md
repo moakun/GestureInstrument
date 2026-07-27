@@ -75,6 +75,35 @@ Optional — find your working audio driver (`dsound`/`wasapi`/`waveout`):
 .venv/Scripts/python.exe tools/audio_probe.py dsound
 ```
 
+## Run (Phase 1 — vision spine)
+
+Tracked hands on screen with live latency instrumentation. No audio yet.
+
+```bash
+.venv/Scripts/python.exe src/main.py
+```
+
+Press `q` or `ESC` to quit. Useful flags: `--headless -s 20` (benchmark, prints a
+pass/fail verdict against the Phase 1 exit criteria), `-c 1` (camera index),
+`--no-gpu`, `--hands 2`.
+
+Unit tests for the camera-independent logic:
+
+```bash
+.venv/Scripts/python.exe tests/test_phase1.py
+```
+
+### Measured on this machine
+
+| Stage | p50 | p95 |
+|---|---|---|
+| capture → submit | 0.8 ms | 1.5 ms |
+| submit → callback (inference) | 16.8 ms | 17.4 ms |
+| callback → render | 1.5 ms | 2.3 ms |
+| **total** | **19.2 ms** | **20.4 ms** |
+
+Sustained 30.2 fps inference (camera-capped), CPU delegate, ~4.7 s warmup.
+
 ## Notes / gotchas
 
 - **Audio driver:** this build supports `dsound` (default, verified), `wasapi`, `waveout`.
@@ -87,3 +116,13 @@ Optional — find your working audio driver (`dsound`/`wasapi`/`waveout`):
 - **System encoding is GBK (cp936):** Python's `open()` defaults to the locale codec, not
   UTF-8. **All text file I/O in code must pass `encoding="utf-8"`** (config, calibration
   JSON, recorded sessions), and config files are kept ASCII-only as a safety net.
+- **The webcam is hard-capped at 30 fps and offers YUY2 only** — MJPG is unavailable at
+  every resolution/backend tried (`tools/camera_format_probe.py`), so the plan's MJPG tip
+  is a no-op on this hardware. **Consequence for Phase 3:** the plan's `confirm=3` costs
+  100 ms here, not 50 ms. Specify confirmation windows in **milliseconds**, not frames,
+  so they stay framerate-independent.
+- **Never re-draw when nothing changed.** An earlier version of the main loop spun at
+  ~2400 fps re-rendering identical frames; it starved the inference thread and inflated
+  measured p95 from 20 ms to 52 ms. The loop now sleeps unless a new frame or new result
+  arrived, and stage timings are recorded once per *result* (recording per iteration
+  measures result age, not render cost).
