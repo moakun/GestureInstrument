@@ -101,6 +101,29 @@ def test_thumb_and_pinch() -> None:
     check("pinch hysteresis band is ordered", F.PINCH_CLOSE < F.PINCH_OPEN)
 
 
+def test_thumb_abduction() -> None:
+    print("thumb_abduction (replaces thumb_open as the load-bearing thumb signal)")
+    out = F.thumb_abduction(synthetic_hand(ALL, thumb_out=True))
+    tucked = F.thumb_abduction(synthetic_hand(ALL, thumb_out=False))
+    check("abducted thumb above threshold", out > F.THUMB_ABDUCTED, f"got {out:+.3f}")
+    check("tucked thumb below threshold", tucked < F.THUMB_ABDUCTED, f"got {tucked:+.3f}")
+    check("separation is wide, not marginal", (out - tucked) > 0.5,
+          f"gap only {out - tucked:.3f}")
+    check("pinching thumb does not read as abducted",
+          F.thumb_abduction(synthetic_hand({"index"}, pinch=True)) < F.THUMB_ABDUCTED)
+
+    # Must be rotation- and scale-invariant like every other shape feature.
+    lm = synthetic_hand(ALL, thumb_out=True)
+    base = F.thumb_abduction(lm)
+    worst = 0.0
+    for rx, ry, rz in [(0.4, 0, 0), (0, 0.7, 0), (0, 0, 1.2), (0.3, -0.6, 0.9)]:
+        worst = max(worst, abs(F.thumb_abduction(transform(lm, rot=rotation(rx, ry, rz))) - base))
+    check("rotation invariant", worst < 1e-3, f"max drift {worst:.2e}")
+    check("scale invariant",
+          abs(F.thumb_abduction(transform(lm, scale=4.0, translate=(2, 2, 2))) - base) < 1e-3)
+    check("no palm_scale dependency", "palm_scale" not in F.thumb_abduction.__code__.co_names)
+
+
 def test_motion_energy() -> None:
     print("motion_energy (the phantom-note killer)")
     lm = synthetic_hand(ALL)
@@ -211,7 +234,8 @@ def main() -> int:
     print("Gesture Instrument - Phase 2 feature tests")
     print("=" * 60)
     for fn in (test_palm_scale, test_curl_extremes, test_rotation_invariance,
-               test_scale_invariance, test_thumb_and_pinch, test_motion_energy,
+               test_scale_invariance, test_thumb_and_pinch, test_thumb_abduction,
+               test_motion_energy,
                test_hand_position, test_finger_count, test_thumb_not_load_bearing,
                test_anisotropy_correction, test_extract):
         fn()

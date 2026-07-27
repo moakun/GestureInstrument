@@ -37,16 +37,16 @@ def report_distributions(s: replay.Session) -> None:
             lm = s.lm_world[i]
             for n, c in F.finger_curls(lm).items():
                 curls[n].append(c)
-            thumbs.append(F.thumb_open(lm))
+            thumbs.append(F.thumb_abduction(lm))
         cs = "  ".join(f"{n[:3]}={np.median(v):+.2f}" for n, v in curls.items())
-        print(f"  count {label} (n={idx.size:4d}):  {cs}   thumb={np.median(thumbs):.2f}")
+        print(f"  count {label} (n={idx.size:4d}):  {cs}   thumb_abd={np.median(thumbs):+.2f}")
 
 
 def sweep(s: replay.Session) -> tuple[float, float, float]:
     """Grid-search curl and thumb thresholds. Returns (best_curl, best_thumb, acc)."""
     curls = np.round(np.arange(-0.90, 0.05, 0.05), 2)
-    thumbs = np.round(np.arange(0.30, 0.95, 0.05), 2)
-    best = (F.CURL_EXTENDED, F.THUMB_OPEN, -1.0)
+    thumbs = np.round(np.arange(-0.60, 1.00, 0.05), 2)   # thumb_abduction is a cosine
+    best = (F.CURL_EXTENDED, F.THUMB_ABDUCTED, -1.0)
     grid = np.zeros((len(curls), len(thumbs)), dtype=np.float32)
     for i, c in enumerate(curls):
         for j, t in enumerate(thumbs):
@@ -79,7 +79,7 @@ def main() -> int:
         print("=" * 64)
 
         base = replay.score_counts(s)
-        print(f"current thresholds: curl={F.CURL_EXTENDED:+.2f} thumb={F.THUMB_OPEN:.2f}"
+        print(f"current thresholds: curl={F.CURL_EXTENDED:+.2f} thumb={F.THUMB_ABDUCTED:+.2f}"
               f"  ->  {100 * base.accuracy:.1f}% on {base.n_static} static frames")
         print(replay.format_confusion(base.confusion))
 
@@ -91,7 +91,7 @@ def main() -> int:
         if best_acc > base.accuracy + 0.005:
             print("\nTo adopt, edit src/features.py:")
             print(f"  CURL_EXTENDED = {best_curl:.2f}")
-            print(f"  THUMB_OPEN    = {best_thumb:.2f}")
+            print(f"  THUMB_ABDUCTED = {best_thumb:+.2f}")
             tuned = replay.score_counts(s, best_curl, best_thumb)
             print(replay.format_confusion(tuned.confusion))
         else:

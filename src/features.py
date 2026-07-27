@@ -31,13 +31,19 @@ FINGERS: dict[str, tuple[int, int, int]] = {
 }
 FINGER_NAMES = tuple(FINGERS)
 
-WRIST, THUMB_TIP, INDEX_MCP, INDEX_TIP, MIDDLE_MCP = 0, 4, 5, 8, 9
+WRIST, THUMB_CMC, THUMB_TIP = 0, 1, 4
+INDEX_MCP, INDEX_TIP, MIDDLE_MCP, PINKY_MCP = 5, 8, 9, 17
 PALM_IDX = (0, 5, 9, 13, 17)          # wrist + the four finger MCPs
 
 # Defaults; Phase 7 calibration replaces these per user.
-CURL_EXTENDED = -0.60                  # cos below this = finger straight
+# Centred in the plateau each threshold measured on a real labelled clip, so the margin
+# to either failure edge is maximised rather than fitted to one recording's exact values:
+#   curl            100% across -0.78..-0.57  -> centre -0.68
+#   thumb_abduction 100% across -0.22..+0.90  -> 0.45 sits mid-plateau
+CURL_EXTENDED = -0.68                  # cos below this = finger straight
 CURL_RETRACTED = -0.25                 # cos above this = finger folded
-THUMB_OPEN = 0.55
+THUMB_ABDUCTED = 0.45                  # thumb_abduction above this = thumb out
+THUMB_OPEN = 0.55                      # legacy distance measure; see thumb_open()
 THUMB_CLOSED = 0.40
 PINCH_CLOSE = 0.25
 PINCH_OPEN = 0.35
@@ -85,14 +91,36 @@ def finger_curls(lm: np.ndarray) -> dict[str, float]:
 
 
 def thumb_open(lm: np.ndarray, s: float | None = None) -> float:
-    """Thumb abduction: |thumb tip - index MCP| / palm scale.
+    """|thumb tip - index MCP| / palm scale. **Weak in practice — prefer thumb_abduction.**
 
-    The thumb needs its own rule. Its PIP angle barely changes between open and closed;
-    what actually changes is abduction. Expect this to be the worst-performing digit
-    regardless — never make thumb state load-bearing in a mapping (plan 2.2).
+    This is the plan's 2.2 measure. Measured on a real 456-frame labelled clip it barely
+    separates a tucked thumb (median 0.692) from an abducted one (0.734): a margin of
+    0.027, well inside frame-to-frame noise. With the fingers extended, the thumb tip
+    just doesn't change its distance to the index MCP much. Kept because it is still a
+    valid signal for a *closed* hand (fist reads 0.43), but nothing load-bearing.
     """
     s = palm_scale(lm) if s is None else s
     return float(np.linalg.norm(lm[THUMB_TIP] - lm[INDEX_MCP])) / s
+
+
+def thumb_abduction(lm: np.ndarray) -> float:
+    """Thumb extension by *direction*: ~+0.9 abducted (out), ~0.0 adducted (tucked).
+
+    Cosine between the thumb axis (CMC->tip) and the palm's across-axis (index MCP->pinky
+    MCP), negated so larger means more open. A tucked thumb lies *across* the palm and
+    points toward the pinky; an abducted thumb points away from it, so the sign flips —
+    which is why the classes separate so widely.
+
+    On the same clip that gives `thumb_open` a 0.027 margin, this gives **0.863**
+    (tucked <= +0.04, out >= +0.91). It also needs no `palm_scale` division, so it does
+    not inherit that estimate's error. The thumb is still the worst-tracked digit: keep
+    it non-load-bearing for counts 0-3 (plan 2.2).
+    """
+    thumb_dir = lm[THUMB_TIP] - lm[THUMB_CMC]
+    palm_across = lm[PINKY_MCP] - lm[INDEX_MCP]
+    thumb_dir = thumb_dir / (np.linalg.norm(thumb_dir) + _EPS)
+    palm_across = palm_across / (np.linalg.norm(palm_across) + _EPS)
+    return float(-np.dot(thumb_dir, palm_across))
 
 
 def pinch_ratio(lm: np.ndarray, s: float | None = None) -> float:
@@ -143,15 +171,16 @@ def extended_fingers(curls: dict[str, float],
 
 def finger_count(lm: np.ndarray, s: float | None = None,
                  curl_threshold: float = CURL_EXTENDED,
-                 thumb_threshold: float = THUMB_OPEN) -> int:
+                 thumb_threshold: float = THUMB_ABDUCTED) -> int:
     """Count 0-5, structured so the unreliable thumb is never load-bearing.
 
-    Counts 1-4 use the four fingers only; 5 additionally requires an open thumb. So a
-    misread thumb can only ever confuse 4 with 5, never shift 1<->2 (plan 2.2).
+    Counts 1-4 use the four fingers only; 5 additionally requires an abducted thumb. So a
+    misread thumb can only ever confuse 4 with 5, never shift 1<->2 (plan 2.2) — which is
+    exactly what a real clip showed when the thumb threshold was wrong: counts 0-3 stayed
+    at 100% while every 4 was read as a 5.
     """
-    s = palm_scale(lm) if s is None else s
     n = sum(extended_fingers(finger_curls(lm), curl_threshold).values())
-    if n == 4 and thumb_open(lm, s) > thumb_threshold:
+    if n == 4 and thumb_abduction(lm) > thumb_threshold:
         return 5
     return n
 
@@ -163,7 +192,8 @@ class HandFeatures:
     curls: dict[str, float]
     n_extended: int
     count: int
-    thumb: float
+    thumb: float          # thumb_abduction — the one that actually discriminates
+    thumb_dist: float     # legacy thumb_open distance, kept for HUD/diagnostics
     pinch: float
     motion: float
     y: float
@@ -185,12 +215,13 @@ def extract(shape_lm: np.ndarray, screen_lm: np.ndarray | None = None,
     s = palm_scale(shape_lm)
     curls = finger_curls(shape_lm)
     n_ext = sum(extended_fingers(curls).values())
-    thumb = thumb_open(shape_lm, s)
+    thumb = thumb_abduction(shape_lm)
     return HandFeatures(
         curls=curls,
         n_extended=n_ext,
-        count=5 if (n_ext == 4 and thumb > THUMB_OPEN) else n_ext,
+        count=5 if (n_ext == 4 and thumb > THUMB_ABDUCTED) else n_ext,
         thumb=thumb,
+        thumb_dist=thumb_open(shape_lm, s),
         pinch=pinch_ratio(shape_lm, s),
         motion=motion_energy(shape_lm, prev_shape_lm, dt, s),
         y=hand_y(screen),

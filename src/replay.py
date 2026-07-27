@@ -62,7 +62,7 @@ def motion_series(s: Session) -> np.ndarray:
 
 
 def count_series(s: Session, curl_threshold: float = F.CURL_EXTENDED,
-                 thumb_threshold: float = F.THUMB_OPEN) -> np.ndarray:
+                 thumb_threshold: float = F.THUMB_ABDUCTED) -> np.ndarray:
     """Predicted finger count per frame, (N,) int8."""
     return np.array(
         [F.finger_count(s.lm_world[i], curl_threshold=curl_threshold,
@@ -86,7 +86,7 @@ class Score:
 
 
 def score_counts(s: Session, curl_threshold: float = F.CURL_EXTENDED,
-                 thumb_threshold: float = F.THUMB_OPEN,
+                 thumb_threshold: float = F.THUMB_ABDUCTED,
                  max_motion: float = STATIC_MAX_MOTION) -> Score:
     """Finger-count accuracy on *static*, labelled frames.
 

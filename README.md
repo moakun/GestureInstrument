@@ -130,6 +130,33 @@ matrix and per-class feature distributions:
 .venv/Scripts/python.exe tools/tune_thresholds.py
 ```
 
+### Result on a real clip
+
+456 labelled static frames, left hand: **100% finger-count accuracy** (Phase 2 target
+≥95%). Getting there required replacing the plan's thumb feature — see below.
+
+### The thumb needs direction, not distance
+
+The plan's `thumb_open` (thumb tip → index MCP, normalized) **does not separate a tucked
+thumb from an out one**: measured medians 0.692 vs 0.734, a margin of 0.027 that sits
+inside frame noise. Every count-4 read as a 5 (83.3% overall).
+
+`thumb_abduction()` replaces it: the cosine between the thumb axis (CMC→tip) and the palm
+across-axis (index MCP→pinky MCP). A tucked thumb lies across the palm pointing toward the
+pinky; an abducted thumb points away — the sign flips, giving a **0.863** margin. It also
+needs no `palm_scale` division, so it doesn't inherit that estimate's error.
+
+Thresholds are **centred in their measured 100%-accuracy plateau**, not fitted to the
+clip's exact values:
+
+| Threshold | 100% plateau | Chosen |
+|---|---|---|
+| `CURL_EXTENDED` | −0.78 … −0.57 | **−0.68** |
+| `THUMB_ABDUCTED` | −0.22 … +0.90 | **+0.45** |
+
+Keeping the thumb non-load-bearing paid off exactly as the plan predicted: with the thumb
+threshold badly wrong, counts 0–3 were still 100% and only 4↔5 broke.
+
 ### Coordinate spaces — the one thing to get right
 
 MediaPipe returns two sets of landmarks, and mixing them up silently corrupts features:

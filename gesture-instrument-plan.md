@@ -363,6 +363,28 @@ def hand_y(lm):
 > Tooling for the exit criteria: `tools/record_session.py` (guided, labelled 0–5 capture),
 > `tests/test_replay.py` (scores static frames), `tools/tune_thresholds.py` (offline
 > threshold grid-search — the cheap half of 7.1 calibration).
+>
+> **Phase 2 status: DONE — 100% on 456 labelled static frames** (target ≥95%).
+>
+> **`thumb_open` as specified in 2.2 does not work, and had to be replaced.** On a real
+> clip it separated a tucked thumb (median 0.692) from an abducted one (0.734) by just
+> **0.027** — inside frame noise. Every count-4 was read as a 5; accuracy 83.3%. With the
+> fingers extended, the thumb tip simply doesn't change its distance to the index MCP.
+> A threshold grid-search "fixed" it at 0.70, but that value sits inside the 0.04 sliver
+> and is fitted to one clip, not a real signal.
+>
+> The replacement, `features.thumb_abduction()`, measures **direction instead of
+> distance**: the cosine between the thumb axis (CMC→tip) and the palm across-axis (index
+> MCP→pinky MCP). A tucked thumb lies across the palm pointing at the pinky; an abducted
+> one points away, so the sign flips. Margin **0.863** vs 0.027 — and it needs no
+> `palm_scale` division, so it doesn't inherit that estimate's error. This is escalation
+> step 1 of 7.3 ("better features"), and it was indeed enough.
+>
+> Both thresholds are now **centred in their measured 100%-accuracy plateau** rather than
+> set to a fitted optimum: `curl` 100% across −0.78…−0.57 → **−0.68**; `thumb_abduction`
+> 100% across −0.22…+0.90 → **+0.45**. 2.2's advice to keep the thumb non-load-bearing
+> proved its worth: with the thumb threshold badly wrong, counts 0–3 still scored 100%
+> and only the 4↔5 boundary broke.
 
 ---
 
