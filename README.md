@@ -102,7 +102,49 @@ Unit tests for the camera-independent logic:
 | callback → render | 1.5 ms | 2.3 ms |
 | **total** | **19.2 ms** | **20.4 ms** |
 
-Sustained 30.2 fps inference (camera-capped), CPU delegate, ~4.7 s warmup.
+Sustained 30.2 fps inference (camera-capped), CPU delegate, ~4.7 s warmup. Adding the
+Phase 2 feature layer moved p95 to ~23 ms.
+
+## Phase 2 — features
+
+`src/features.py` is pure numpy: `(21,3)` landmarks in, scalars out, zero state. That is
+what makes offline tuning possible — record a clip once, then iterate on thresholds
+without a camera.
+
+**Record a labelled clip** (guided: hold each count 0–5 while it records):
+
+```bash
+.venv/Scripts/python.exe tools/record_session.py --hand Left
+```
+
+**Score it against ground truth** (Phase 2 exit criteria, ≥95% on static frames):
+
+```bash
+.venv/Scripts/python.exe tests/test_replay.py
+```
+
+**Tune thresholds offline** — grid-searches curl/thumb thresholds and prints a confusion
+matrix and per-class feature distributions:
+
+```bash
+.venv/Scripts/python.exe tools/tune_thresholds.py
+```
+
+### Coordinate spaces — the one thing to get right
+
+MediaPipe returns two sets of landmarks, and mixing them up silently corrupts features:
+
+| Use | Landmarks | Why |
+|---|---|---|
+| Shape (curls, thumb, pinch) | `world` — metric, isotropic | angles are only meaningful in an undistorted space |
+| Screen position (Mode C pitch) | `hands` — normalized 0..1 | it *is* a screen measurement |
+
+Normalized coords are **anisotropic**: x spans the frame width and y the height, so on a
+4:3 camera a unit of x is 1.33× a unit of y. Measured effect: curl cosines drift by
+**0.277** as the hand rotates in-plane — nearly the full width of the `-0.60`…`-0.25`
+hysteresis band, i.e. enough to flip a finger's state from tilt alone. Use world
+landmarks, or pass normalized ones through `features.isotropic(lm, aspect)` first
+(drift → 1.3e-06).
 
 ## Notes / gotchas
 

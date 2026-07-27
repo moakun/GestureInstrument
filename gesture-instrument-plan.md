@@ -258,6 +258,19 @@ Log a rolling p50/p95 of: capture→submit, submit→callback, callback→render
 
 **Exit criteria:** two hands tracked at ≥30 fps sustained; total pipeline p95 < 40 ms excluding debounce; handedness labels correct when you wave each hand.
 
+> **Phase 1 status: DONE.** Sustained **30.2 fps** (camera-capped), pipeline **p95 20.4 ms**
+> (inference ~17 ms, CPU delegate), ~4.7 s warmup; both hands and handedness confirmed
+> visually. Verify with `python src/main.py --headless -s 20`.
+>
+> Two hardware/design findings:
+> - **The webcam is hard-capped at 30 fps and offers YUY2 only** — MJPG is unavailable at
+>   every resolution and backend (`tools/camera_format_probe.py`), so 1.1's MJPG tip is a
+>   no-op here. **Consequence for Phase 3:** `confirm=3` costs 100 ms at 30 fps, not the
+>   50 ms this plan assumes at 60 fps — so specify confirmation windows in **milliseconds**.
+> - **Never re-render when nothing changed.** A first cut of the loop spun at ~2400 fps
+>   redrawing identical frames; it starved the inference thread and inflated measured p95
+>   from 20 ms to 52 ms. Record stage timings once per *result*, not per iteration.
+
 ---
 
 ## Phase 2 — Feature extraction (1 day)
@@ -332,6 +345,24 @@ def hand_y(lm):
 ```
 
 **Exit criteria:** a unit test replays a recorded `.npz` and asserts the extracted finger-count sequence matches hand-labelled ground truth ≥95% on *static* frames.
+
+> **Phase 2 status: code complete, awaiting a labelled recording.** `src/features.py` is
+> pure numpy; 51 synthetic-geometry tests pass (`tests/test_features.py`), covering the
+> invariances the design rests on — curls unchanged under 3D rotation, ratios unchanged
+> with camera distance, thumb never load-bearing for counts 0–3.
+>
+> **Use metric world landmarks for shape, not normalized ones.** MediaPipe also returns
+> `hand_world_landmarks` (metres, isotropic). Normalized image coords are *anisotropic* —
+> x spans the frame width, y the height — so on this 4:3 camera curl cosines drift by
+> **0.277** as the hand rotates in-plane. The plan's hysteresis band is only 0.35 wide
+> (`-0.60`…`-0.25`), so that distortion is nearly the whole band: enough to flip a
+> finger's state purely from tilting the hand, which is exactly what 2.2 uses angles to
+> avoid. `features.isotropic()` corrects normalized coords (drift → 1.3e-06) for clips
+> where world landmarks aren't available.
+>
+> Tooling for the exit criteria: `tools/record_session.py` (guided, labelled 0–5 capture),
+> `tests/test_replay.py` (scores static frames), `tools/tune_thresholds.py` (offline
+> threshold grid-search — the cheap half of 7.1 calibration).
 
 ---
 
