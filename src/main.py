@@ -17,9 +17,11 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import audio
 import features as feat
 import hud
 import statemachine as sm
@@ -29,6 +31,7 @@ from metrics import Pipeline
 
 ROOT = Path(__file__).resolve().parent.parent
 MODEL = ROOT / "assets" / "hand_landmarker.task"
+CONFIG = ROOT / "config" / "mappings.yaml"
 
 # Exit criteria from the plan (Phase 1).
 TARGET_FPS = 30.0
@@ -45,7 +48,22 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("-s", "--seconds", type=float, default=0.0, help="auto-exit after N s")
     p.add_argument("--no-gpu", action="store_true", help="skip the GPU delegate attempt")
     p.add_argument("--hands", type=int, default=2)
+    p.add_argument("--no-audio", action="store_true", help="run silently (vision only)")
     return p.parse_args()
+
+
+# --- Temporary Mode C mapping ------------------------------------------------------
+# Phase 5 moves this into `mapping.py` with hot-reload; the plan explicitly says to
+# hard-code a mapping first so there is sound before the config layer exists. Values
+# still come from config/mappings.yaml so nothing is duplicated as a magic number.
+def resolve_pitch(cfg: dict, cell: int, left_count: int | None) -> tuple[str, int]:
+    """Mode C: a quantized height cell -> (instrument, MIDI pitch)."""
+    scale = cfg["scale"]
+    left = cfg["left_hand"].get(left_count if left_count is not None else 0,
+                                {"instrument": "harp", "octave": 0})
+    degree, octave = cell % len(scale), cell // len(scale)
+    pitch = cfg["root"] + 12 * (octave + left["octave"]) + scale[degree]
+    return left["instrument"], int(np.clip(pitch, 0, 127))
 
 
 def main() -> int:
@@ -65,7 +83,24 @@ def main() -> int:
     t_start = time.perf_counter()
     last_log = t_start
 
-    with Camera(args.camera, args.width, args.height, args.fps) as cam, \
+    with open(CONFIG, encoding="utf-8") as fh:      # system codec is GBK, not UTF-8
+        cfg = yaml.safe_load(fh)
+    acfg = cfg.get("audio", {})
+    if args.no_audio:
+        synth: object = audio.NullSynth()
+    else:
+        synth = audio.Synth(str(ROOT / acfg.get("soundfont", "assets/FluidR3_GM.sf2")),
+                            cfg["instruments"], cfg["sustain"],
+                            driver=acfg.get("driver", "dsound"),
+                            samplerate=acfg.get("samplerate", 48000),
+                            period_size=acfg.get("period_size", 128),
+                            periods=acfg.get("periods", 2))
+    trigger_hand = cfg.get("trigger_hand", "right").capitalize()
+    n_cells = len(cfg["scale"]) * cfg["continuous"]["octaves"]
+    pitch_q = sm.HysteresisQuantizer(n_cells, cfg["continuous"]["deadband"])
+    invert = cfg["continuous"].get("invert", True)
+
+    with synth, Camera(args.camera, args.width, args.height, args.fps) as cam, \
             Landmarker(str(MODEL), num_hands=args.hands, try_gpu=not args.no_gpu) as lmk:
         first = cam.wait_for_first_frame()
         print(f"camera: {cam.actual_size[0]}x{cam.actual_size[1]} "
@@ -82,6 +117,11 @@ def main() -> int:
         trackers = {h: sm.HandTracker(h) for h in ("Left", "Right")}
         event_log: list[sm.Event] = []
         n_triggers = 0
+        cell = 0                                   # current Mode C height cell
+        sounding: tuple[str, int] | None = None    # the note awaiting release
+        print(f"audio: {getattr(synth, 'info', 'disabled')}")
+        print(f"Mode C: {trigger_hand} hand height -> {n_cells} pitch cells; "
+              f"pinch (index extended) to play. Left hand count selects instrument.")
         while True:
             frame = cam.read()
             res = lmk.latest()
@@ -132,6 +172,13 @@ def main() -> int:
                     prev_shape.pop(gone, None)      # don't measure motion across a dropout
                     prev_t.pop(gone, None)
 
+                # Mode C samples the trigger hand's height every frame; the pitch that
+                # sounds is whatever it reads at the instant the pinch fires. The
+                # quantizer's deadband stops a hovering hand warbling between degrees.
+                if trigger_hand in hand_feats:
+                    y = hand_feats[trigger_hand].y
+                    cell = pitch_q(1.0 - y if invert else y)
+
                 # --- Phase 3 state machine --------------------------------------
                 for label, tracker in trackers.items():
                     if label in hand_feats:
@@ -141,9 +188,19 @@ def main() -> int:
                     else:
                         evs = tracker.tick_absent(res.capture_ts)
                     for e in evs:
+                        event_log.append(e)
+                        if e.hand != trigger_hand:
+                            continue
+                        # --- Phase 4: events become sound ------------------------
                         if e.kind == "trigger_on":
                             n_triggers += 1
-                        event_log.append(e)
+                            inst, pitch = resolve_pitch(cfg, cell, trackers["Left"].count)
+                            synth.note_on(inst, pitch, 100)
+                            sounding = (inst, pitch)
+                        elif e.kind in ("trigger_off", "hand_lost") and sounding:
+                            # Synth ignores this for ringing instruments (harp/guitar).
+                            synth.note_off(*sounding)
+                            sounding = None
                     del event_log[:-4]
             if res is not None:
                 for label, lm in res.hands.items():
