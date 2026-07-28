@@ -44,14 +44,20 @@ class Stream:
         self.dt = 1.0 / fps
         self.jitter = jitter
         self.rng = np.random.default_rng(seed)
-        self.frames: list[tuple[float, np.ndarray]] = []
+        self.frames: list[tuple[float, np.ndarray, tuple[float, float]]] = []
         self.t = 0.0
         self._last: np.ndarray | None = None
         self.marks: list[tuple[str, float]] = []      # (name, t) for asserting timing
+        self.center = (0.5, 0.5)                      # screen position of the hand
+
+    def at(self, x: float, y: float) -> "Stream":
+        """Place the hand on screen. Mode C reads pitch from this y."""
+        self.center = (x, y)
+        return self
 
     def _emit(self, lm: np.ndarray) -> None:
         noisy = lm + self.rng.normal(0.0, self.jitter, lm.shape).astype(np.float32)
-        self.frames.append((self.t, noisy.astype(np.float32)))
+        self.frames.append((self.t, noisy.astype(np.float32), self.center))
         self.t += self.dt
         self._last = lm
 
@@ -86,9 +92,9 @@ def features_stream(stream: Stream) -> list[tuple[float, F.HandFeatures]]:
     out: list[tuple[float, F.HandFeatures]] = []
     prev: np.ndarray | None = None
     prev_t = 0.0
-    for t, lm in stream.frames:
+    for t, lm, center in stream.frames:
         dt = (t - prev_t) if prev is not None else 0.0
-        out.append((t, F.extract(lm, to_screen(lm), prev, dt)))
+        out.append((t, F.extract(lm, to_screen(lm, center=center), prev, dt)))
         prev, prev_t = lm, t
     return out
 

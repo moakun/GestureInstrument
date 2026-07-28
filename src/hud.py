@@ -27,6 +27,14 @@ _DIM = (170, 170, 170)
 _FONT = cv2.FONT_HERSHEY_SIMPLEX
 
 
+_NOTE_NAMES = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
+
+
+def note_name(pitch: int) -> str:
+    """MIDI pitch -> scientific pitch notation, e.g. 60 -> 'C4'."""
+    return f"{_NOTE_NAMES[int(pitch) % 12]}{int(pitch) // 12 - 1}"
+
+
 def draw_hand(img: np.ndarray, lm: np.ndarray, label: str, score: float) -> None:
     """Draw one hand's skeleton. ``lm`` is (21,3) normalized coordinates."""
     h, w = img.shape[:2]

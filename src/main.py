@@ -227,7 +227,11 @@ def main() -> int:
                 latched = "-" if tracker.count is None else str(tracker.count)
                 lines.append(f"{label[0]}: raw={tracker.raw_count} latch={latched} "
                              f"pinch={f.pinch:.2f} y={f.y:.2f} mot={f.motion:4.1f} {moving}")
-            lines.append(f"triggers: {n_triggers}")
+            pend_inst, pend_pitch = resolve_pitch(cfg, cell, trackers["Left"].count)
+            lines.append(f"NEXT: {pend_inst:6s} cell {cell:2d}/{n_cells}  "
+                         f"midi {pend_pitch}  {hud.note_name(pend_pitch)}")
+            lines.append(f"triggers: {n_triggers}"
+                         + (f"   sounding {hud.note_name(sounding[1])}" if sounding else ""))
             for e in event_log[-3:]:
                 val = "" if e.value is None else f" {e.value}"
                 lines.append(f"  {e.hand[0]} {e.kind}{val}  {(now - e.t) * 1e3:5.0f}ms ago")
