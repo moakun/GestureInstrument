@@ -569,6 +569,29 @@ Rules for the callback, non-negotiable: no `print`, no allocation, no locks, no 
 
 **Exit criteria:** hammer 20 note-ons in 2 seconds. No dropouts, no clipping, measured `note_on()` call cost < 1 ms.
 
+> **Phase 4 status: DONE — and it plays.** `tools/audio_bench.py`:
+> `note_on()` max **0.193 ms** (mean 0.119), **0 clipped samples**, longest mid-passage
+> silence **0.1 ms**, peak −10.1 dBFS. All four criteria pass with room to spare.
+>
+> Verified two ways, because each catches what the other can't: **live** through the real
+> `dsound` driver at period-size 128 (what `note_on()` actually costs the CV loop), and
+> **offline** via `realtime=False` + `render()`, which yields the exact sample buffer —
+> the only way to *prove* no clipping or dropouts rather than assume it. `realtime=False`
+> also lets the whole audio layer be tested on a machine with no sound card.
+>
+> **Do not use `Synth.start()`.** It also creates a MIDI *input* driver, which errors
+> noisily when no MIDI keyboard is attached. `audio.py` calls `new_fluid_audio_driver`
+> directly. Period-size fallback 128 → 256 → default is implemented as 4.1 advises.
+>
+> Per-instrument release semantics work as specified: piano is damped on note-off, harp
+> and guitar ignore it and ring out (`force=True` for panic/shutdown).
+>
+> **First playable moment reached.** `src/main.py` now wires the Mode C mapping inline as
+> the plan suggests — left-hand count picks instrument+octave, right-hand height picks
+> pitch, pinch fires. `tests/test_playable.py` verifies the whole chain against
+> `NullSynth`: height→pitch monotonic, only pentatonic degrees, instrument selection, and
+> that sweeping fingers alone makes no sound.
+
 ---
 
 ## Phase 5 — Mapping layer (½ day)

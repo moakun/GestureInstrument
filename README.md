@@ -157,6 +157,37 @@ clip's exact values:
 Keeping the thumb non-load-bearing paid off exactly as the plan predicted: with the thumb
 threshold badly wrong, counts 0–3 were still 100% and only 4↔5 broke.
 
+## Phase 4 — audio, and the first playable moment
+
+**It makes sound now.** Run it and pinch:
+
+```bash
+.venv/Scripts/python.exe src/main.py
+```
+
+- **Right hand height** → pitch (15 cells over 3 octaves, C major pentatonic)
+- **Pinch** (thumb to an *extended* index) → play the note
+- **Left hand finger count** → instrument + octave (0–1 piano, 2 guitar, 3–4 harp, 5 piano+8ve)
+- `--no-audio` runs the vision pipeline silently
+
+Benchmark and audio unit tests:
+
+```bash
+.venv/Scripts/python.exe tools/audio_bench.py
+```
+
+### Measured
+
+| Criterion | Target | Measured |
+|---|---|---|
+| `note_on()` call cost | < 1 ms | **0.193 ms** max (0.119 mean) |
+| Clipping | none | **0** clipped samples |
+| Dropouts | none | longest silence **0.1 ms** |
+| Output level | audible | peak −10.1 dBFS |
+
+Driver `dsound`, period-size 128, 48 kHz. Piano is damped on release; harp and guitar
+ignore note-off and ring out, as real plucked instruments do.
+
 ## Phase 3 — state machine
 
 `src/statemachine.py` turns per-frame features into discrete, correctly-timed events:
