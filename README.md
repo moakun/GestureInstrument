@@ -157,6 +157,35 @@ clip's exact values:
 Keeping the thumb non-load-bearing paid off exactly as the plan predicted: with the thumb
 threshold badly wrong, counts 0–3 were still 100% and only 4↔5 broke.
 
+## Phase 3 — state machine
+
+`src/statemachine.py` turns per-frame features into discrete, correctly-timed events:
+`Schmitt` (hysteresis), `SelectionLatch` (debounce + motion gate), `PinchTrigger` (edge
+detect + refractory), `HysteresisQuantizer` (Mode C pitch deadband), and `HandTracker`
+(per-hand orchestration + dropout handling).
+
+```bash
+.venv/Scripts/python.exe tests/test_statemachine.py
+```
+
+Exit scenario (synthetic): 10 sweeps of 0→5→0 with 10 deliberate pinches over 832 frames →
+**exactly 10 note-ons, 10 note-offs, zero phantoms**, trigger lag **33 ms** (one frame at
+30 fps — the floor).
+
+### Confirmation windows are in milliseconds, not frames
+
+The plan's `confirm=3` assumes 60 fps ≈ 50 ms. This camera caps at 30 fps, where 3 frames
+cost **100 ms** — double the latency tax. `SelectionLatch(confirm_ms=…)` is framerate-
+independent and is tested at 15 and 60 fps.
+
+### A closed fist looks like a pinch
+
+Making a fist brings the thumb tip near the curled index tip. On the real recorded hand a
+fist measures `pinch_ratio` **0.263–0.302** against a 0.25 trigger threshold — a 0.013
+margin. So `HandTracker` additionally requires the **index to be extended** before a pinch
+counts, using the index Schmitt so a genuine pinch's partial index bend doesn't drop the
+gate mid-gesture.
+
 ### Coordinate spaces — the one thing to get right
 
 MediaPipe returns two sets of landmarks, and mixing them up silently corrupts features:

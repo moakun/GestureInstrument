@@ -455,6 +455,28 @@ class PinchTrigger:
 
 **Exit criteria:** replay a recorded clip where you deliberately sweep 0→5→0 fingers ten times while pinching at known moments. Assert exactly 10 note-ons, zero phantoms.
 
+> **Phase 3 status: DONE against synthetic streams** (`src/statemachine.py`, 63 tests in
+> `tests/test_statemachine.py`). The exit scenario — 10 sweeps 0→5→0 with 10 deliberate
+> pinches, 832 frames — yields **exactly 10 note-ons, 10 note-offs, zero phantoms**, with
+> a trigger lag of **33 ms**: one frame at 30 fps, the theoretical floor. That is the
+> pinch's whole justification (0.2) confirmed: it costs *no* confirmation latency.
+> Still to validate against a real free-play recording.
+>
+> **Confirmation windows are in milliseconds, not frames.** `confirm=3` assumes 60 fps;
+> this camera is capped at 30, where the same 3 frames cost 100 ms. `SelectionLatch` takes
+> `confirm_ms` and is tested to commit at ~100 ms at both 15 and 60 fps.
+>
+> **3.3's pinch trigger fires on a closed fist and needs an extra gate.** A fist brings the
+> thumb tip near the curled index tip: on a real recorded hand it measures `pinch_ratio`
+> **0.263–0.302** against the specified 0.25 threshold — a margin of 0.013, i.e. a phantom
+> note waiting to happen (the synthetic fist crosses it outright at 0.206). `HandTracker`
+> now requires the **index to be extended** for a pinch to register, using the index
+> Schmitt so the partial index bend of a real pinch doesn't drop the gate mid-gesture.
+>
+> Also implemented here: `HysteresisQuantizer` for Mode C's continuous pitch (the deadband
+> 5 asks for, so a hovering hand doesn't warble), and 7.2's dropout rule — hold the last
+> selection 300 ms, and never auto-fire when a hand reappears mid-pinch.
+
 ---
 
 ## Phase 4 — Audio engine (1 day)

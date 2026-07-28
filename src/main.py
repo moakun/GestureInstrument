@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import features as feat
 import hud
+import statemachine as sm
 from capture import Camera
 from landmarks import Landmarker
 from metrics import Pipeline
@@ -78,6 +79,9 @@ def main() -> int:
         hand_feats: dict[str, feat.HandFeatures] = {}
         prev_shape: dict[str, np.ndarray] = {}
         prev_t: dict[str, float] = {}
+        trackers = {h: sm.HandTracker(h) for h in ("Left", "Right")}
+        event_log: list[sm.Event] = []
+        n_triggers = 0
         while True:
             frame = cam.read()
             res = lmk.latest()
@@ -127,6 +131,20 @@ def main() -> int:
                 for gone in set(prev_shape) - set(res.hands):
                     prev_shape.pop(gone, None)      # don't measure motion across a dropout
                     prev_t.pop(gone, None)
+
+                # --- Phase 3 state machine --------------------------------------
+                for label, tracker in trackers.items():
+                    if label in hand_feats:
+                        evs = tracker.update(hand_feats[label], res.capture_ts)
+                    elif tracker.present:
+                        evs = tracker.absent(res.capture_ts)
+                    else:
+                        evs = tracker.tick_absent(res.capture_ts)
+                    for e in evs:
+                        if e.kind == "trigger_on":
+                            n_triggers += 1
+                        event_log.append(e)
+                    del event_log[:-4]
             if res is not None:
                 for label, lm in res.hands.items():
                     hud.draw_hand(view, lm, label, res.scores.get(label, 0.0))
@@ -147,13 +165,19 @@ def main() -> int:
             ]
             for label in sorted(hand_feats):
                 f = hand_feats[label]
-                moving = "MOVING" if f.motion > 1.2 else "still "
-                lines.append(f"{label[0]}: n={f.count} pinch={f.pinch:.2f} "
-                             f"y={f.y:.2f} mot={f.motion:4.1f} {moving}")
+                tracker = trackers[label]
+                moving = "MOVING" if f.motion > sm.MAX_SELECT_MOTION else "still "
+                latched = "-" if tracker.count is None else str(tracker.count)
+                lines.append(f"{label[0]}: raw={tracker.raw_count} latch={latched} "
+                             f"pinch={f.pinch:.2f} y={f.y:.2f} mot={f.motion:4.1f} {moving}")
+            lines.append(f"triggers: {n_triggers}")
+            for e in event_log[-3:]:
+                val = "" if e.value is None else f" {e.value}"
+                lines.append(f"  {e.hand[0]} {e.kind}{val}  {(now - e.t) * 1e3:5.0f}ms ago")
             hud.draw_stats(view, lines)
             for label in sorted(hand_feats):
                 hud.draw_hand_features(view, res.hands[label], hand_feats[label], label)
-            hud.draw_hint(view, "Phase 2 features - no audio yet")
+            hud.draw_hint(view, "Phase 3 state machine - pinch with index extended to trigger (no audio yet)")
 
             # Record a stage breakdown once per *new* result. Recording every iteration
             # would measure how old the latest result is, not how long rendering took.

@@ -211,6 +211,31 @@ def test_motion_gate_blocks_transitions() -> None:
           f"gated={selects} ungated={ungated}")
 
 
+def test_fist_does_not_trigger() -> None:
+    print("a closed fist must not fire a note")
+    import features as F
+    fist = G.pose(0)
+    ratio = F.pinch_ratio(fist)
+    print(f"       synthetic fist pinch_ratio={ratio:.3f} (threshold {F.PINCH_CLOSE}); "
+          f"a real recorded fist measures 0.263-0.302")
+    check("the fist really does look like a pinch by ratio alone",
+          ratio < F.PINCH_OPEN, f"got {ratio:.3f} - test no longer exercises the gate")
+
+    tr = S.HandTracker("Right")
+    s = G.Stream().hold(G.pose(1), 0.4).move_to(fist, 0.15).hold(fist, 0.6)
+    events = G.run(s, tr)
+    check("no note-on from making a fist",
+          not any(e.kind == "trigger_on" for e in events),
+          f"{[e.kind for e in events]}")
+
+    # ...but a real pinch from an open hand still fires.
+    s2 = G.Stream(seed=11).hold(G.pose(1), 0.3).move_to(G.pose(1, pinch=True), 0.05) \
+        .hold(G.pose(1, pinch=True), 0.2)
+    tr2 = S.HandTracker("Right")
+    check("a genuine pinch still fires",
+          sum(1 for e in G.run(s2, tr2) if e.kind == "trigger_on") == 1)
+
+
 def test_exit_criteria() -> None:
     print("EXIT CRITERIA: 10 sweeps 0->5->0 with 10 deliberate pinches")
     n = 10
@@ -244,7 +269,8 @@ def main() -> int:
     print("=" * 62)
     for fn in (test_schmitt, test_selection_latch, test_pinch_trigger, test_quantizer,
                test_hand_tracker_basics, test_no_autofire_on_reacquisition,
-               test_motion_gate_blocks_transitions, test_exit_criteria):
+               test_motion_gate_blocks_transitions, test_fist_does_not_trigger,
+               test_exit_criteria):
         fn()
     print("-" * 62)
     if _failures:
