@@ -6,6 +6,32 @@ hand height select instrument + pitch; a pinch fires the note. See
 
 **Stack:** Python 3.11 · MediaPipe HandLandmarker · OpenCV · FluidSynth · numpy
 
+## How to play
+
+- **Right hand height** → pitch (15 cells over 3 octaves, C major pentatonic)
+- **Pinch** (thumb to an extended index) → play the note
+- **Left hand finger count** → instrument and octave (0–1 piano, 2 guitar, 3–4 harp, 5 piano + octave)
+
+## Results
+
+| | Target | Measured |
+|---|---|---|
+| Vision pipeline latency (capture → render) | — | **19.2 ms p50 / 20.4 ms p95**; ~23 ms p95 with the feature layer |
+| Frame rate | real time | **30 fps** sustained (camera-capped), CPU only |
+| Note-trigger lag | as low as possible | **33 ms**: one frame at 30 fps, the floor |
+| Finger-count accuracy (456 labelled frames) | ≥ 95 % | **100 %** |
+| Phantom notes (10 sweeps, 10 deliberate pinches, 832 frames) | 0 | **0**: exactly 10 note-ons, 10 note-offs |
+| `note_on()` cost / audio dropouts | < 1 ms / none | **0.19 ms** max / none |
+
+Two engineering findings behind those numbers, each detailed below:
+
+- **The thumb needs direction, not distance.** The planned thumb feature could not
+  separate a tucked thumb from an open one (0.027 margin, inside frame noise), so
+  every 4 read as a 5. A geometric abduction angle widened the margin to **0.863**
+  and took accuracy from 83.3 % to 100 %.
+- **A closed fist looks like a pinch.** On a real hand the fist sits 0.013 from the
+  pinch threshold, so a pinch only counts when the index finger is extended.
+
 ## Locked decisions (Phase 0)
 
 | Decision | Choice |
